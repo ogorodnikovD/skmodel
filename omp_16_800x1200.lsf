@@ -1,0 +1,6 @@
+#BSUB -J "omp_16_800x1200"
+#BSUB -W 00:15
+#BSUB -o "omp_16_800x1200.%J.out"
+#BSUB -e "omp_16_800x1200.%J.err"
+#BSUB -R "affinity[core(16)]"
+/polusfs/lsf/openmp/launchOpenMP.py ./prog_omp 800 1200

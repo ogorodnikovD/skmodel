@@ -1,0 +1,7 @@
+#BSUB -J "omp_32_800x1200"
+#BSUB -W 00:15
+#BSUB -o "omp_32_800x1200.%J.out"
+#BSUB -e "omp_32_800x1200.%J.err"
+#BSUB -R "affinity[core(16)]"
+export OMP_NUM_THREADS=32
+/polusfs/lsf/openmp/launchOpenMP.py ./prog_omp 800 1200
