@@ -1,5 +1,5 @@
 prog_omp: prog.cpp
-	xlC_r -O3 -qsmp=omp -qarch=pwr8 prog.cpp -o prog_omp
+	xlC_r -O1 -qsmp=omp -qarch=pwr8 prog.cpp -o prog_omp
 
 upload:
 	scp prog.cpp Makefile omp_*.lsf polus:~/skmodel/

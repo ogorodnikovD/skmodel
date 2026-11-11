@@ -2,7 +2,6 @@
 #include <cstdlib>
 #include <cmath>
 #include <ctime>
-#include <vector>
 #include <algorithm>
 #ifdef _OPENMP  
 #include <omp.h>
@@ -17,7 +16,7 @@ const double R = 3.0;
 struct Solver {
     int M, N;
     double h1, h2, eps, inv_eps2;
-    std::vector<double> Q, F, B;
+    double *Q, *F, *B;
 };
 
 void build_coefficients(Solver &s) {
@@ -29,16 +28,26 @@ void build_coefficients(Solver &s) {
     s.inv_eps2 = 1.0 / (s.eps * s.eps);
 
     const int size = (M + 1) * (N + 1);
-    s.Q.assign(size, 0.0);
-    s.F.assign(size, 0.0);
-    s.B.assign(size, 0.0);
+    s.Q = new double[size];
+    s.F = new double[size];
+    s.B = new double[size];
+
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i <= M; ++i) {
+        for (int j = 0; j <= N; ++j) {
+            const int index = i * (N + 1) + j;
+            s.Q[index] = 0.0;
+            s.F[index] = 0.0;
+            s.B[index] = 0.0;
+        }
+    }
 
     const double h1 = s.h1, h2 = s.h2;
     const double cell = h1 * h2;
     double sumS = 0.0;
     int n_in = 0, n_part = 0, n_out = 0;
 
-    #pragma omp parallel for reduction(+: sumS, n_in, n_part, n_out)
+    #pragma omp parallel for schedule(static) reduction(+: sumS, n_in, n_part, n_out)
     for (int i = 1; i < M; ++i) {
         for (int j = 1; j < N; ++j) {
             const double x_i = A1 + i * h1;
@@ -141,7 +150,7 @@ void build_coefficients(Solver &s) {
     std::printf("cells: inside = %d, partial = %d, outside = %d\n", n_in, n_part, n_out);
 }
 
-void solve_cg(const Solver &s, double delta, std::vector<double> &w) {
+void solve_cg(const Solver &s, double delta, double *w) {
     const int M = s.M, N = s.N, stride = N + 1;
     const int size = (M + 1) * (N + 1);
     const double h1 = s.h1, h2 = s.h2;
@@ -149,9 +158,23 @@ void solve_cg(const Solver &s, double delta, std::vector<double> &w) {
     const double weight = h1 * h2;
     const int max_iter = (M - 1) * (N - 1);
  
-    w.assign(size, 0.0);
-    std::vector<double> r(size, 0.0), z(size, 0.0), p(size, 0.0), Ap(size, 0.0);
+    double *r = new double[size];
+    double *z = new double[size];
+    double *p = new double[size];
+    double *Ap = new double[size];
  
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i <= M; ++i) {
+        for (int j = 0; j <= N; ++j) {
+            const int index = i * stride + j;
+            w[index] = 0.0;
+            r[index] = 0.0;
+            z[index] = 0.0;
+            p[index] = 0.0;
+            Ap[index] = 0.0;
+        }
+    }
+
     int iter = 0, restarts = 0;
     bool restart = true;
     bool just_restarted = false;
@@ -163,7 +186,7 @@ void solve_cg(const Solver &s, double delta, std::vector<double> &w) {
     while (iter < max_iter) {
         if (restart) {
             zr = 0.0;
-            #pragma omp parallel for reduction(+: zr)
+            #pragma omp parallel for schedule(static) reduction(+: zr)
             for (int i = 1; i < M; ++i) {
                 for (int j = 1; j < N; ++j) {
                     const int index = i * stride + j;
@@ -182,7 +205,7 @@ void solve_cg(const Solver &s, double delta, std::vector<double> &w) {
         }
  
         double pAp = 0.0;
-        #pragma omp parallel for reduction(+: pAp)
+        #pragma omp parallel for schedule(static) reduction(+: pAp)
         for (int i = 1; i < M; ++i) {
             for (int j = 1; j < N; ++j) {
                 const int index = i * stride + j;
@@ -196,7 +219,7 @@ void solve_cg(const Solver &s, double delta, std::vector<double> &w) {
         const double alpha = zr / pAp;
  
         double brw = 0.0, brw_abs = 0.0, pp = 0.0;
-        #pragma omp parallel for reduction(+: brw, brw_abs, pp)
+        #pragma omp parallel for schedule(static) reduction(+: brw, brw_abs, pp)
         for (int i = 1; i < M; ++i) {
             for (int j = 1; j < N; ++j) {
                 const int index = i * stride + j;
@@ -214,7 +237,7 @@ void solve_cg(const Solver &s, double delta, std::vector<double> &w) {
         ++iter;
  
         if (J > J_old + J_tol) {
-            #pragma omp parallel for
+            #pragma omp parallel for schedule(static)
             for (int i = 1; i < M; ++i) {
                 for (int j = 1; j < N; ++j) {
                     w[i * stride + j] -= alpha * p[i * stride + j];
@@ -237,7 +260,7 @@ void solve_cg(const Solver &s, double delta, std::vector<double> &w) {
         }
  
         double zr_new = 0.0;
-        #pragma omp parallel for reduction(+: zr_new)
+        #pragma omp parallel for schedule(static) reduction(+: zr_new)
         for (int i = 1; i < M; ++i) {
             for (int j = 1; j < N; ++j) {
                 const int index = i * stride + j;
@@ -248,7 +271,7 @@ void solve_cg(const Solver &s, double delta, std::vector<double> &w) {
         zr_new *= weight;
         const double beta = zr_new / zr;
         zr = zr_new;
-        #pragma omp parallel for
+        #pragma omp parallel for schedule(static)
         for (int i = 1; i < M; ++i) {
             for (int j = 1; j < N; ++j) {
                 p[i * stride + j] = z[i * stride + j] + beta * p[i * stride + j];
@@ -267,6 +290,11 @@ void solve_cg(const Solver &s, double delta, std::vector<double> &w) {
         w[M * stride + j] = std::sin(B1 + y);
     }
  
+    delete[] r;
+    delete[] z;
+    delete[] p;
+    delete[] Ap;
+
     std::printf("Grad: iterations = %d (max %d), restarts = %d, stop: %s\n",
                 iter, max_iter, restarts, reason);
 }
@@ -303,12 +331,13 @@ int main(int argc, char **argv) {
     const double t0 = wall_time();
     build_coefficients(s);
     const double t1 = wall_time();
-    std::vector<double> w;
+    const int size = (s.M + 1) * (s.N + 1);
+    double *w = new double[size];
     solve_cg(s, delta, w);
     const double t2 = wall_time();
  
     double wmax = 0.0;
-    for (size_t k = 0; k < w.size(); ++k) {
+    for (size_t k = 0; k < size; ++k) {
         wmax = std::max(wmax, std::fabs(w[k]));
     }
     const int ic = s.M / 2, jc = s.N / 2;
@@ -316,5 +345,10 @@ int main(int argc, char **argv) {
                 wmax, A1 + ic * s.h1, A2 + jc * s.h2, w[ic * (s.N + 1) + jc]);
     std::printf("time: coefficients = %.4f s, Grad = %.4f s, total = %.4f s\n",
                 t1 - t0, t2 - t1, t2 - t0);
+    
+    delete[] w;
+    delete[] s.Q;
+    delete[] s.F;
+    delete[] s.B;
     return 0;
 }
