@@ -1,4 +1,5 @@
 #BSUB -J "omp_8_400x600"
+#BSUB -x
 #BSUB -W 00:15
 #BSUB -o "omp_8_400x600.%J.out"
 #BSUB -e "omp_8_400x600.%J.err"
